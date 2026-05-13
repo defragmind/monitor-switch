@@ -1,0 +1,63 @@
+#!/bin/bash
+# monitor-switch — swap monitor inputs between profiles
+# Usage: monitor-switch [profile]
+#   monitor-switch        — toggle between linux ↔ mac
+#   monitor-switch linux  — both monitors to DisplayPort
+#   monitor-switch mac    — both monitors to HDMI-1
+#   monitor-switch status — show current inputs
+
+set -euo pipefail
+
+STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/monitor-switch-profile"
+
+# Display numbers from ddcutil detect
+DISPLAY=2  # Acer VG271U (DP-2) — the one that actually responds to DDC/CI
+
+# VCP 0x60 input source values
+DP="0x0f"
+HDMI1="0x11"
+HDMI2="0x12"
+
+set_inputs() {
+    local input="$1" profile="$2"
+    echo "Switching Acer to ${profile}: input=${input}"
+
+    ddcutil setvcp 60 "$input" --display "$DISPLAY"
+
+    echo "$profile" > "$STATE_FILE"
+    echo "Done — ${profile}"
+}
+
+show_status() {
+    echo "=== Acer VG271U Input Status ==="
+    local s
+    s=$(ddcutil getvcp 60 --display "$DISPLAY" --brief 2>/dev/null | awk '{print $NF}')
+    echo "Acer (Display 2):  $s"
+    if [[ -f "$STATE_FILE" ]]; then
+        echo "Last profile: $(cat "$STATE_FILE")"
+    fi
+}
+
+case "${1:-toggle}" in
+    linux)
+        set_inputs "$DP" "linux"
+        ;;
+    mac)
+        set_inputs "$HDMI1" "mac"
+        ;;
+    toggle)
+        current=$(cat "$STATE_FILE" 2>/dev/null || echo "linux")
+        if [[ "$current" == "linux" ]]; then
+            set_inputs "$HDMI1" "mac"
+        else
+            set_inputs "$DP" "linux"
+        fi
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: monitor-switch [linux|mac|toggle|status]" >&2
+        exit 1
+        ;;
+esac
